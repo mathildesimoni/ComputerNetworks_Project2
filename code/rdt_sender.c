@@ -30,7 +30,9 @@ struct sockaddr_in serveraddr;
 struct itimerval timer; 
 tcp_packet *sndpkt;
 tcp_packet *recvpkt;
-sigset_t sigmask;      
+sigset_t sigmask;     
+
+pthread_mutex_t lock; 
 
 struct thread_data{
    FILE *fp;
@@ -140,6 +142,13 @@ int main (int argc, char **argv)
     data.serveraddr = serveraddr;
     data.serverlen = serverlen;
 
+    // initialize mutex variable
+    if (pthread_mutex_init(&lock, NULL) != 0)
+    {
+        fprintf(stderr,"ERROR, mutex init failed %s\n", hostname);
+        exit(0);
+    }
+
     // start threading process
     // split the program in 2 threads
     // first thread t_1 sends data
@@ -152,8 +161,9 @@ int main (int argc, char **argv)
     pthread_join(t_1,NULL);
     pthread_join(t_2,NULL);
 
-    return 0;
+    pthread_mutex_destroy(&lock);
 
+    return 0;
 }
 
 // function used by the sending thread
@@ -182,7 +192,9 @@ void send_packets(struct thread_data *data){
     // data size is 1456 defined in packet.h
     while (1) {
         // printf("next sequence number: %i \n", next_seqno);
+        pthread_mutex_lock(&lock);
         if (next_seqno < send_max){
+            pthread_mutex_unlock(&lock);
             // we are in the window, a new packet can be sent
             len = fread(buffer, 1, DATA_SIZE, fp);
             if (len <= 0) {
@@ -216,6 +228,9 @@ void send_packets(struct thread_data *data){
             free(sndpkt);
             next_seqno += len;
         }
+        else {
+            pthread_mutex_unlock(&lock);
+        }
     }
     printf("end \n");
 }
@@ -245,10 +260,16 @@ void receive_packets(struct thread_data *data){
         }
         recvpkt = (tcp_packet *)buffer;
         if (recvpkt->hdr.ackno > send_base) {
+            // printf("Send base: %d \n", send_base);
+            // printf("send_max: %d \n", send_max);
             // printf("> sequence number received = %d \n", recvpkt->hdr.ackno);
-            // printf("> send base is %d \n\n", send_base);
+            pthread_mutex_lock(&lock);
             send_base = recvpkt->hdr.ackno;
             send_max += DATA_SIZE;
+            pthread_mutex_unlock(&lock);
+            // printf("Updated send base: %d \n", send_base);
+            // printf("Updated send_max: %d \n", send_max);
+            // printf("window_size: %d \n\n", (send_max-send_base)/DATA_SIZE);
         }
         else {
             // printf("< sequence number received = %d \n", recvpkt->hdr.ackno);
