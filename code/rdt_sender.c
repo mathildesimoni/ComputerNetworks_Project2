@@ -168,12 +168,7 @@ int main (int argc, char **argv)
 
 // function used by the sending thread
 void send_packets(struct thread_data *data){
-    printf("Sending thread \n");
-    
-    printf("fp: %d \n", data->fp);
-    printf("sockfd: %d \n", data->sockfd);
-    printf("Server address: %s \n", inet_ntoa(data->serveraddr.sin_addr));
-    printf("Server len: %d \n", data->serverlen);
+    // printf("Sending thread \n");
 
     int len;
     char buffer[DATA_SIZE];
@@ -184,8 +179,8 @@ void send_packets(struct thread_data *data){
     int serverlen = data->serverlen;
     struct sockaddr_in serveraddr = data->serveraddr;
 
-    printf("fp: %d \n", fp);
-    printf("sockfd: %d \n", sockfd);
+    // printf("fp: %d \n", fp);
+    // printf("sockfd: %d \n", sockfd);
 
     // init_timer(RETRY, resend_packets);
 
@@ -237,19 +232,17 @@ void send_packets(struct thread_data *data){
 
 // function used by the receiving thread
 void receive_packets(struct thread_data *data){
-    printf("Receiving thread \n");
+    // printf("Receiving thread \n");
 
-    int len;
     char buffer[DATA_SIZE];
 
     // create local variables to make the code more readable
-    FILE *fp = data->fp;
     int sockfd = data->sockfd;
     int serverlen = data->serverlen;
     struct sockaddr_in serveraddr = data->serveraddr;
 
-    printf("fp: %d \n", fp);
-    printf("sockfd: %d \n", sockfd);
+    // printf("fp: %d \n", fp);
+    // printf("sockfd: %d \n", sockfd);
 
     // sleep(1);
 
@@ -265,7 +258,7 @@ void receive_packets(struct thread_data *data){
             // printf("> sequence number received = %d \n", recvpkt->hdr.ackno);
             pthread_mutex_lock(&lock);
             send_base = recvpkt->hdr.ackno;
-            send_max += DATA_SIZE;
+            send_max += DATA_SIZE % 4294967296;
             pthread_mutex_unlock(&lock);
             // printf("Updated send base: %d \n", send_base);
             // printf("Updated send_max: %d \n", send_max);
