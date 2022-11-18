@@ -21,6 +21,7 @@
 // initialization of global variables
 int next_seqno=0; // sequence number for next packet to be sent
 int send_base=0; // start of the window
+int unack_send_base=0; //send base of an unacked packet 
 int window_size = 10; // window size (in packets)
 int send_max = 0 + 10 * DATA_SIZE; // end of the window
 
@@ -44,26 +45,63 @@ struct thread_data{
 void send_packets(struct thread_data *data);
 void receive_packets(struct thread_data *data);
 
-void resend_packets(int sig)
-{
-    if (sig == SIGALRM)
-    {
-        //Resend all packets range between 
-        //sendBase and nextSeqNum
-        VLOG(INFO, "Timout happend");
-        if(sendto(sockfd, sndpkt, TCP_HDR_SIZE + get_data_size(sndpkt), 0, 
-                    ( const struct sockaddr *)&serveraddr, serverlen) < 0)
-        {
-            error("sendto");
-        }
-    }
-}
-
-
 void start_timer()
 {
     sigprocmask(SIG_UNBLOCK, &sigmask, NULL);
     setitimer(ITIMER_REAL, &timer, NULL);
+}
+
+void resend_packets(int sig, struct thread_data *data)
+{
+    if (sig == SIGALRM)
+    {
+        //send_packets() starting from unack_send_base to send_base
+        //Resend all packets range between 
+        //sendBase and nextSeqNum
+        int len;
+        char buffer[DATA_SIZE];
+        
+        // create local variables to make the code more readable
+        FILE *fp = data->fp;
+        int sockfd = data->sockfd;
+        int serverlen = data->serverlen;
+        struct sockaddr_in serveraddr = data->serveraddr;
+
+        VLOG(INFO, "Timeout happend");
+        //starting from oldest unacked packet
+        //continue to send until send_base
+
+        while (send_base < send_max){ 
+            len = fread(buffer, 1, DATA_SIZE, fp);
+            
+            if (len <= 0) {
+                VLOG(INFO, "End Of File has been reached");
+                sndpkt = make_packet(0);
+                sendto(sockfd, sndpkt, TCP_HDR_SIZE,  0,
+                        (const struct sockaddr *)&serveraddr, serverlen);
+                exit(0);
+                // break;
+            }
+            sndpkt = make_packet(len);
+            memcpy(sndpkt->data, buffer, len);
+            sndpkt->hdr.seqno = next_seqno;
+
+            VLOG(DEBUG, "Sending unacked packet %d to %s", 
+                    next_seqno, inet_ntoa(serveraddr.sin_addr));
+
+            if(sendto(sockfd, sndpkt, TCP_HDR_SIZE + get_data_size(sndpkt), 0, 
+                    ( const struct sockaddr *)&serveraddr, serverlen) < 0)
+            {
+            error("sendto");
+            }
+            if (timer_running == 0) {
+                start_timer();
+                timer_running = 1;
+            }
+            free(sndpkt);
+            next_seqno += len;
+        }
+    }
 }
 
 
@@ -142,13 +180,6 @@ int main (int argc, char **argv)
     data.serveraddr = serveraddr;
     data.serverlen = serverlen;
 
-    // initialize mutex variable
-    if (pthread_mutex_init(&lock, NULL) != 0)
-    {
-        fprintf(stderr,"ERROR, mutex init failed %s\n", hostname);
-        exit(0);
-    }
-
     // start threading process
     // split the program in 2 threads
     // first thread t_1 sends data
@@ -161,9 +192,8 @@ int main (int argc, char **argv)
     pthread_join(t_1,NULL);
     pthread_join(t_2,NULL);
 
-    pthread_mutex_destroy(&lock);
-
     return 0;
+
 }
 
 // function used by the sending thread
@@ -182,14 +212,12 @@ void send_packets(struct thread_data *data){
     // printf("fp: %d \n", fp);
     // printf("sockfd: %d \n", sockfd);
 
-    // init_timer(RETRY, resend_packets);
+    init_timer(RETRY, resend_packets);
 
     // data size is 1456 defined in packet.h
     while (1) {
         // printf("next sequence number: %i \n", next_seqno);
-        pthread_mutex_lock(&lock);
         if (next_seqno < send_max){
-            pthread_mutex_unlock(&lock);
             // we are in the window, a new packet can be sent
             len = fread(buffer, 1, DATA_SIZE, fp);
             if (len <= 0) {
@@ -216,15 +244,12 @@ void send_packets(struct thread_data *data){
                         ( const struct sockaddr *)&serveraddr, serverlen) < 0) {
                 error("sendto");
             }
-            // if (timer_running == 0) {
-            //     start_timer();
-            //     timer_running = 1;
-            // }
+            if (timer_running == 0) {
+                start_timer();
+                timer_running = 1;
+            }
             free(sndpkt);
             next_seqno += len;
-        }
-        else {
-            pthread_mutex_unlock(&lock);
         }
     }
     printf("end \n");
@@ -232,11 +257,13 @@ void send_packets(struct thread_data *data){
 
 // function used by the receiving thread
 void receive_packets(struct thread_data *data){
-    // printf("Receiving thread \n");
+//    printf("Receiving thread \n");
 
+    int len;
     char buffer[DATA_SIZE];
 
     // create local variables to make the code more readable
+    FILE *fp = data->fp;
     int sockfd = data->sockfd;
     int serverlen = data->serverlen;
     struct sockaddr_in serveraddr = data->serveraddr;
@@ -253,9 +280,8 @@ void receive_packets(struct thread_data *data){
         }
         recvpkt = (tcp_packet *)buffer;
         if (recvpkt->hdr.ackno > send_base) {
-            // printf("Send base: %d \n", send_base);
-            // printf("send_max: %d \n", send_max);
             // printf("> sequence number received = %d \n", recvpkt->hdr.ackno);
+            stop_timer(); //stop timer, timer will restart when sender sends the next packet
             pthread_mutex_lock(&lock);
             send_base = recvpkt->hdr.ackno;
             send_max += DATA_SIZE % 4294967296;
@@ -263,6 +289,16 @@ void receive_packets(struct thread_data *data){
             // printf("Updated send base: %d \n", send_base);
             // printf("Updated send_max: %d \n", send_max);
             // printf("window_size: %d \n\n", (send_max-send_base)/DATA_SIZE);
+            //if there are still unacked packets, restart timer
+            if (next_seqno != send_base) { 
+                start_timer();
+                // pthread_mutex_lock(&lock);
+                // keeping track of oldest unacked packet
+                // unack_send_base = recvpkt->hdr.ackno;
+                // pthread_mutex_unlock(&lock);
+                //resend packets function 
+                //init_timer(RETRY, resend_packets); 
+            }
         }
         else {
             // printf("< sequence number received = %d \n", recvpkt->hdr.ackno);
