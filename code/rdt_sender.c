@@ -31,7 +31,8 @@ struct sockaddr_in serveraddr;
 struct itimerval timer; 
 tcp_packet *sndpkt;
 tcp_packet *recvpkt;
-sigset_t sigmask;     
+sigset_t sigmask;  
+FILE *fp;   
 
 pthread_mutex_t lock; 
 
@@ -62,17 +63,20 @@ void resend_packets(int sig, struct thread_data *data)
         char buffer[DATA_SIZE];
         
         // create local variables to make the code more readable
-        FILE *fp = data->fp;
-        int sockfd = data->sockfd;
-        int serverlen = data->serverlen;
-        struct sockaddr_in serveraddr = data->serveraddr;
+        // FILE *fp = data->fp;
+        //int sockfd = data->sockfd;
+        //int serverlen = data->serverlen;
+        //struct sockaddr_in serveraddr = data->serveraddr;
 
         VLOG(INFO, "Timeout happend");
         //starting from oldest unacked packet
         //continue to send until send_base
+        printf("hello1\n");
+        send_base -= DATA_SIZE;
 
         while (send_base < send_max){ 
             len = fread(buffer, 1, DATA_SIZE, fp);
+            printf("hello \n");
             
             if (len <= 0) {
                 VLOG(INFO, "End Of File has been reached");
@@ -136,7 +140,7 @@ int main (int argc, char **argv)
     // int next_seqno;
     char *hostname;
     // char buffer[DATA_SIZE];
-    FILE *fp;
+    //FILE *fp;
 
     /* check command line arguments */
     if (argc != 4) {
@@ -284,7 +288,7 @@ void receive_packets(struct thread_data *data){
             stop_timer(); //stop timer, timer will restart when sender sends the next packet
             pthread_mutex_lock(&lock);
             send_base = recvpkt->hdr.ackno;
-            send_max += DATA_SIZE % 4294967296;
+            send_max += DATA_SIZE;
             pthread_mutex_unlock(&lock);
             // printf("Updated send base: %d \n", send_base);
             // printf("Updated send_max: %d \n", send_max);

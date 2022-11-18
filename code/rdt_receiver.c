@@ -103,6 +103,10 @@ int main(int argc, char **argv) {
          */
         gettimeofday(&tp, NULL);
         VLOG(DEBUG, "%lu, %d, %d", tp.tv_sec, recvpkt->hdr.data_size, recvpkt->hdr.seqno);
+        
+        printf("ecpected seq: %d \n", exp_seqno);
+        printf("receive seq: %d \n", recvpkt->hdr.seqno);
+        
 
         if (recvpkt->hdr.seqno != exp_seqno) {
             printf("Out of order packet! Packet discarded \n");
