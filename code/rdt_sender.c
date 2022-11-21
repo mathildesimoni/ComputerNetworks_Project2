@@ -235,6 +235,7 @@ void send_packets(struct thread_data *data){
     	//printf("sender last_seqno: %d \n", last_seqno);
     }
     
+    //breaks from while loop and sends last packet when reach end of file
     sndpkt = make_packet(0);
     sendto(sockfd, sndpkt, TCP_HDR_SIZE,  0, 
     	(const struct sockaddr *)&serveraddr, serverlen);
