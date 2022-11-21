@@ -26,12 +26,9 @@ int main(int argc, char **argv) {
     FILE *fp;
     char buffer[MSS_SIZE];
     struct timeval tp;
+    int exp_seqno = 0; // expected sequence number
 
-    int exp_seqno = 0;
-
-    /* 
-     * check command line arguments 
-     */
+    // check command line arguments 
     if (argc != 3) {
         fprintf(stderr, "usage: %s <port> FILE_RECVD\n", argv[0]);
         exit(1);
@@ -86,7 +83,6 @@ int main(int argc, char **argv) {
         /*
          * recvfrom: receive a UDP datagram from a client
          */
-        //VLOG(DEBUG, "waiting from server \n");
         if (recvfrom(sockfd, buffer, MSS_SIZE, 0,
                 (struct sockaddr *) &clientaddr, (socklen_t *)&clientlen) < 0) {
             error("ERROR in recvfrom");
@@ -94,24 +90,23 @@ int main(int argc, char **argv) {
         recvpkt = (tcp_packet *) buffer;
         assert(get_data_size(recvpkt) <= DATA_SIZE);
         if ( recvpkt->hdr.data_size == 0) {
-            //VLOG(INFO, "End Of File has been reached");
+            VLOG(INFO, "End Of File has been reached");
             fclose(fp);
             break;
         }
-        /* 
-         * sendto: ACK back to the client 
-         */
+        
+        // sendto: ACK back to the client 
         gettimeofday(&tp, NULL);
-        VLOG(DEBUG, "%lu, %d, %d", tp.tv_sec, recvpkt->hdr.data_size, recvpkt->hdr.seqno);
+        VLOG(DEBUG, "Packet received: %lu, %d, %d", tp.tv_sec, recvpkt->hdr.data_size, recvpkt->hdr.seqno);
         
-        printf("ecpected seq: %d \n", exp_seqno);
-        printf("receive seq: %d \n", recvpkt->hdr.seqno);
+        printf("Expected seq was: %d \n", exp_seqno);
         
-
+        // send ACK back to the client only if in-order packet
         if (recvpkt->hdr.seqno != exp_seqno) {
-            printf("Out of order packet! Packet discarded \n");
+            printf("Out of order packet! Packet discarded \n\n");
         }
         else {
+            printf("\n");
             fseek(fp, recvpkt->hdr.seqno, SEEK_SET);
             fwrite(recvpkt->data, 1, recvpkt->hdr.data_size, fp);
             sndpkt = make_packet(0);
@@ -122,7 +117,6 @@ int main(int argc, char **argv) {
                 error("ERROR in sendto");
             }
             exp_seqno += recvpkt->hdr.data_size;
-            // printf("Expected sequence number: %d \n", exp_seqno);
         }
     }
     return 0;
