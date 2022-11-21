@@ -26,6 +26,8 @@ int window_size = 10; // window size (in packets)
 int send_max; // end of the window
 int last_seqno = 0; // seq number of last packet when reach end of file
 int timer_running = 0; // 1 if the timer is currently running
+int end_transfer = 0; // = 1 when all packets for the file have been sent
+int last_packet_rcv = 0; // = 1 when receiver received last empty packet and finished running
 
 int sockfd, serverlen;
 struct sockaddr_in serveraddr;
@@ -55,42 +57,55 @@ void resend_packets(int sig, struct thread_data *data) {
     if (sig == SIGALRM) {
         
         timer_running = 0;
-        // Resend all packets range between send_base and send_max
-        int len;
-        char buffer[DATA_SIZE];
         VLOG(INFO, "Timeout happend");
-        //starting from oldest unacked packet
-        next_seqno = send_base;
-        int max = send_max;
-  
-        // move the pointer to part of the file to be retransmitted
-        fseek(fp, next_seqno, SEEK_SET);
         
-        // resend all packets in the window
-        while (next_seqno < max) { 
-            len = fread(buffer, 1, DATA_SIZE, fp);
-            
-            if (len <= 0) {
-                break;
-            }
-            sndpkt = make_packet(len);
-            memcpy(sndpkt->data, buffer, len);
-            sndpkt->hdr.seqno = next_seqno;
-
-            VLOG(DEBUG, "Sending unacked packet %d to %s", 
-                    next_seqno, inet_ntoa(serveraddr.sin_addr));
-
-            if(sendto(sockfd, sndpkt, TCP_HDR_SIZE + get_data_size(sndpkt), 0, 
-                    ( const struct sockaddr *)&serveraddr, serverlen) < 0) {
-            error("sendto");
-            }
-            if (timer_running == 0) {
-                start_timer();
-                timer_running = 1;
-            }
-            free(sndpkt);
-            next_seqno += len;
+        // all packets for the file have been sent and received
+        // only need to receive last empty packet to let know the 
+        // receiver that the transfert is completed
+        if (end_transfer == 1){
+        	sndpkt = make_packet(0);
+    		sendto(sockfd, sndpkt, TCP_HDR_SIZE,  0, 
+    			(const struct sockaddr *)&serveraddr, serverlen);
+    		start_timer();
+    		timer_running = 1;	
         }
+        else {
+        	// Resend all packets range between send_base and send_max
+        	int len;
+        	char buffer[DATA_SIZE];
+        	//starting from oldest unacked packet
+        	next_seqno = send_base;
+        	int max = send_max;
+  
+        	// move the pointer to part of the file to be retransmitted
+        	fseek(fp, next_seqno, SEEK_SET);
+        
+        	// resend all packets in the window
+        	while (next_seqno < max) { 
+		    len = fread(buffer, 1, DATA_SIZE, fp);
+		    
+		    if (len <= 0) {
+		        break;
+		    }
+		    sndpkt = make_packet(len);
+		    memcpy(sndpkt->data, buffer, len);
+		    sndpkt->hdr.seqno = next_seqno;
+
+		    VLOG(DEBUG, "Sending unacked packet %d to %s", 
+		            next_seqno, inet_ntoa(serveraddr.sin_addr));
+
+		    if(sendto(sockfd, sndpkt, TCP_HDR_SIZE + get_data_size(sndpkt), 0, 
+		            ( const struct sockaddr *)&serveraddr, serverlen) < 0) {
+		    error("sendto");
+		    }
+		    if (timer_running == 0) {
+		        start_timer();
+		        timer_running = 1;
+		    }
+		    free(sndpkt);
+		    next_seqno += len;
+        	}
+     	}
     }
 }
 
@@ -227,17 +242,22 @@ void send_packets(struct thread_data *data){
         }
     }
     
-    //printf("sender send base: %d \n", send_base);
-    //printf("sender last_seqno: %d \n", last_seqno);
-    
     while (send_base < last_seqno) {
-    	//printf("sender send base: %d \n", send_base);
-    	//printf("sender last_seqno: %d \n", last_seqno);
+    	// wait all packets are ACKed
     }
     
+    // need to send last empty packet to notify the receiver that
+    // the transfert is completed
+    end_transfer = 1;
+    stop_timer();
     sndpkt = make_packet(0);
     sendto(sockfd, sndpkt, TCP_HDR_SIZE,  0, 
     	(const struct sockaddr *)&serveraddr, serverlen);
+    start_timer();
+    timer_running = 1;
+    while (last_packet_rcv == 0) {
+    	// make sure the received received the last empty packet
+    }
     exit(0);
 }
 
@@ -260,17 +280,23 @@ void receive_packets(struct thread_data *data){
         }
         recvpkt = (tcp_packet *)buffer;
         
-        if (recvpkt->hdr.ackno > send_base) {
-            stop_timer(); //stop timer, will restart when sender sends the next packet
-            pthread_mutex_lock(&lock);
-            send_base = recvpkt->hdr.ackno;
-            send_max += DATA_SIZE;
-            pthread_mutex_unlock(&lock);
-  
-            //if there are still unacked packets, restart timer
-            if (next_seqno != send_base) { 
-                start_timer();
-            }
+        if (end_transfer == 1){
+    		// last empty packet was received, received stoped running
+    		last_packet_rcv = 1;
+    	}
+    	else {
+		if (recvpkt->hdr.ackno > send_base) {
+		    stop_timer(); //stop timer, will restart when sender sends the next packet
+		    pthread_mutex_lock(&lock);
+		    send_base = recvpkt->hdr.ackno;
+		    send_max += DATA_SIZE;
+		    pthread_mutex_unlock(&lock);
+	  
+		    //if there are still unacked packets, restart timer
+		    if (next_seqno != send_base) { 
+		        start_timer();
+		    }
+		}
         }
     }
 }
