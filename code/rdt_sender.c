@@ -214,13 +214,6 @@ void send_packets(struct thread_data *data){
                 last_seqno = next_seqno;
                 VLOG(INFO, "End Of File has been reached");
                 break;
-                
-                //printf("sender send base: %d \n", send_base);
-                // sndpkt = make_packet(0);
-                // sendto(sockfd, sndpkt, TCP_HDR_SIZE,  0,
-                       // (const struct sockaddr *)&serveraddr, serverlen);
-                // exit(0);
-                // break;
             }
             sndpkt = make_packet(len);
             memcpy(sndpkt->data, buffer, len);
