@@ -28,6 +28,8 @@ int last_seqno = 0; // seq number of last packet when reach end of file
 int timer_running = 0; // 1 if the timer is currently running
 int end_transfer = 0; // = 1 when all packets for the file have been sent
 int last_packet_rcv = 0; // = 1 when receiver received last empty packet and finished running
+int dup_ack = 0; // checking when receiving duplicate acks 
+int num_dup = 0; // number of duplicate acks 
 
 int sockfd, serverlen;
 struct sockaddr_in serveraddr;
@@ -272,6 +274,19 @@ void receive_packets(struct thread_data *data){
             error("recvfrom");
         }
         recvpkt = (tcp_packet *)buffer;
+
+        //increase number of duplicate acks if receive ack for same packet
+        if (dup_ack == recvpkt->hdr.ackno){
+            num_dup += 1;
+        }
+        dup_ack = recvpkt->hdr.ackno;
+
+        //if receive 3 duplicate acks 
+        if (num_dup == 4){
+            num_dup = 0;
+            printf("3 duplicate acks received, packet lost.\n");
+            //need to resend packets -> how to call resend_packets function here? 
+        }
         
         if (end_transfer == 1){
     		// last empty packet was received, received stoped running

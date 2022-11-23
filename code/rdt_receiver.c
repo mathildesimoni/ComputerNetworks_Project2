@@ -11,10 +11,12 @@
 
 #include "common.h"
 #include "packet.h"
+#define buffsize 100
 
 
 tcp_packet *recvpkt;
 tcp_packet *sndpkt;
+tcp_packet *lostpkt_buffer[buffsize]; //random buffer size for now
 
 int main(int argc, char **argv) {
     int sockfd; /* socket */
@@ -25,8 +27,17 @@ int main(int argc, char **argv) {
     int optval; /* flag value for setsockopt */
     FILE *fp;
     char buffer[MSS_SIZE];
+    char dup_buff[MSS_SIZE];
     struct timeval tp;
     int exp_seqno = 0; // expected sequence number
+
+    int i = 0; //iterator 
+    while(i < buffsize){
+            lostpkt_buffer[i] = make_packet(MSS_SIZE);
+            lostpkt_buffer[i]->hdr.data_size = 0; // Assign all created packets to have a data_size of 0 for empty packets
+            lostpkt_buffer[i]->hdr.seqno = -1; // Assign all packet hdr.seqno's to -1 for exmpty packets
+            i++;
+    }
 
     // check command line arguments 
     if (argc != 3) {
@@ -112,7 +123,22 @@ int main(int argc, char **argv) {
         
         // send ACK back to the client only if in-order packet
         if (recvpkt->hdr.seqno != exp_seqno) {
-            printf("Out of order packet! Packet discarded \n\n");
+            printf("Out of order packet! \n\n");
+            // buffer the packet and send a duplicate ack 
+            // i = 0;
+            // while(i<buffsize){
+            //     if(lostpkt_buffer[i]->hdr.seqno == recvpkt->hdr.seqno){
+            //         memcpy(lostpkt_buffer[i], recvpkt, MSS_SIZE);
+            //         sndpkt = make_packet(0);
+            //         sndpkt->hdr.ackno = lostpkt_buffer[i]->hdr.seqno + lostpkt_buffer[i]->hdr.data_size;
+            //         sndpkt->hdr.ctr_flags = ACK;
+            //         if (sendto(sockfd, sndpkt, TCP_HDR_SIZE, 0, 
+            //             (struct sockaddr *) &clientaddr, clientlen) < 0) {
+            //             error("ERROR in sendto");
+            //         }
+            //     }
+            //     i++;
+            // }
         }
         else {
             printf("\n");
