@@ -26,7 +26,7 @@ int unack_send_base = 0; // send base of an unacked packet
 int window_size = 10;    // window size (in packets)
 double CWND = 1;            // congestion window size
 int ssthresh = 64;
-double whole_number = 0;    // to keep track if 1/CWND congestion avoidance sums to a whole number
+//double whole_number = 0;    // to keep track if 1/CWND congestion avoidance sums to a whole number
 int send_max;            // end of the window
 int last_seqno = 0;      // seq number of last packet when reach end of file
 int timer_running = 0;   // 1 if the timer is currently running
@@ -34,6 +34,10 @@ int end_transfer = 0;    // = 1 when all packets for the file have been sent
 int last_packet_rcv = 0; // = 1 when receiver received last empty packet and finished running
 int dup_ack = 0;         // checking when receiving duplicate acks
 int num_dup = 0;         // number of duplicate acks
+int slow_start = 1;
+int congestion_avoidance = 0;
+// time_t t;
+// char log_line[256]; // line to store in log file
 
 int sockfd, serverlen;
 struct sockaddr_in serveraddr;
@@ -42,6 +46,7 @@ tcp_packet *sndpkt;
 tcp_packet *recvpkt;
 sigset_t sigmask;
 FILE *fp;
+FILE* log_file;
 pthread_mutex_t lock;
 
 struct thread_data
@@ -72,6 +77,14 @@ void resend_packets(int sig)
     {
         VLOG(INFO, "3 duplicate ACKs \n");
     }
+
+    // check if need to pass to congestion avoidance
+    // if packet is lost in slow-start phase
+    // if (slow_start == 1) {
+    //     // packet was lost in slow start phase, go back to start in slow start and update ssthresh
+    //     ssthresh = (int)ceil(fmax((double)CWND / (double)2, 2));
+    //     CWND = 1;
+    // }
 
     timer_running = 0;
 
@@ -117,11 +130,15 @@ void resend_packets(int sig)
             timer_running = 1;
         }
         // free(sndpkt);
-        // if packet is lost in slow-start phase
-        ssthresh = (int)ceil((double)CWND / (double)2);
-        printf("In resend, ssthresh is now: %d\n", ssthresh);
+        // if packet is lost in slow-start or congestion avoidance phase
+        // go back to start of slow start for 2 cases
+        ssthresh = (int)ceil(fmax((double)CWND / (double)2, 2));
         CWND = 1;
-        whole_number = 0;
+        slow_start = 1;
+        congestion_avoidance = 0;
+        // printf("In resend, ssthresh is now: %d\n", ssthresh);
+        // CWND = 1;
+        // whole_number = 0;
     }
 
     // if (sig == SIGALRM) { //SIGALRM
@@ -264,8 +281,11 @@ int main(int argc, char **argv)
 {
     int portno; // len;
     char *hostname;
+
     send_max = send_base + (int) floor(CWND) * DATA_SIZE;
-    printf("send_max in main func: %d\n", send_max);
+    // printf("send_max in main func: %d\n", send_max);
+    if (slow_start == 1) {printf("congestion phase: slow_start\n");}
+    if (congestion_avoidance == 1) {printf("congestion phase: congestion_avoidance\n");}
 
     /* check command line arguments */
     if (argc != 4)
@@ -400,6 +420,20 @@ void send_packets(struct thread_data *data)
 // function used by the receiving thread
 void receive_packets(struct thread_data *data)
 {
+    // opening file CWND.csv to store CWND evolution
+    log_file = fopen("../analysis/CWND.csv", "wb");
+    if (log_file == NULL)
+    {
+        error("opening log_file");
+    }
+
+    // variables to get current time
+    struct timeval t;
+    char log_line[256]; // line to store in log file
+    int milli;
+    int micro;
+    char tmp_buffer[80];
+    char curTime[84];
 
     int len;
     char buffer[DATA_SIZE];
@@ -412,6 +446,18 @@ void receive_packets(struct thread_data *data)
 
     while (1)
     {
+        // get current time and output to log_file
+        gettimeofday(&t, NULL);
+        // milli = t.tv_usec / 1000;
+        micro = t.tv_usec;
+        strftime(tmp_buffer, 80, "%H:%M:%S", localtime(&t.tv_sec));
+        // curTime[84] = "";
+        curTime[83] = "";
+        sprintf(curTime, "%s:%d", tmp_buffer, micro);
+        sprintf(log_line, "%s,%0.2f\n", curTime, CWND);
+        fwrite(log_line, sizeof(log_line), 1, log_file);
+
+        printf("BEFORE receiving packet CWND: %0.2f\n", CWND);
         if (recvfrom(sockfd, buffer, MSS_SIZE, 0,
                      (struct sockaddr *)&serveraddr, (socklen_t *)&serverlen) < 0)
         {
@@ -436,17 +482,18 @@ void receive_packets(struct thread_data *data)
             dup_ack = 0;
             num_dup = 0;
             printf("3 duplicate acks received, packet lost.\n");
-            printf("CONGESTION AVOIDANCE \n");
-            printf("current window size in lost pakcet: %f\n", CWND);
-            CWND += (double) 1 / (double) CWND;
-            send_max = send_base + (int) floor(CWND) * DATA_SIZE;
-            // whole_number += (double) 1 / (double) CWND;
-            // if ((int) floor(whole_number) == 1)
-            // {
-            //     CWND++;
-            //     whole_number = 0;
-            //     send_max = send_base + CWND * DATA_SIZE;
-            // }
+            // printf("CONGESTION AVOIDANCE \n");
+            // printf("current window size in lost pakcet: %f\n", CWND);
+            // CWND += (double) 1 / (double) CWND;
+            // send_max = send_base + (int) floor(CWND) * DATA_SIZE;
+
+            // // whole_number += (double) 1 / (double) CWND;
+            // // if ((int) floor(whole_number) == 1)
+            // // {
+            // //     CWND++;
+            // //     whole_number = 0;
+            // //     send_max = send_base + CWND * DATA_SIZE;
+            // // }
 
             stop_timer();
             resend_packets(2); // 2 is random here, no particular meaning
@@ -463,19 +510,28 @@ void receive_packets(struct thread_data *data)
             {
                 stop_timer(); // stop timer
                 pthread_mutex_lock(&lock);
+                // move window (keeping same packet)
                 send_base = recvpkt->hdr.ackno;
                 // send_max += DATA_SIZE;
-                if (CWND <= ssthresh)
+                // if (slow_start == 1) {
+                //     CWND ++;
+                //     send_max = send_base + (int) floor(CWND) * DATA_SIZE;
+
+                // }
+                if (CWND < ssthresh)
                 {
-                    printf("current window size: %f\n", CWND);
+                    // slow start case
+                    //printf("current window size: %f\n", CWND);
                     CWND++; 
                     send_max = send_base + (int) floor(CWND) * DATA_SIZE;
-                    printf("SLOW START \n");
+                    //printf("SLOW START \n");
+                    slow_start = 1;
+                    congestion_avoidance = 0;
                 }
-                else if (CWND > ssthresh)
+                else // (CWND > ssthresh)
                 {
-                    printf("CONGESTION AVOIDANCE \n");
-                    printf("current window size in congestion avoidance: %f\n", CWND);
+                    //printf("CONGESTION AVOIDANCE \n");
+                    //printf("current window size in congestion avoidance: %f\n", CWND);
                     // whole_number += (double) 1 / (double) CWND;
                     // printf("whole number : %f\n", whole_number);
                     // if ((int) floor(whole_number) == 1)
@@ -487,6 +543,8 @@ void receive_packets(struct thread_data *data)
                     // }
                     CWND += (double) 1 / (double) CWND;
                     send_max = send_base + (int) floor(CWND) * DATA_SIZE;
+                    slow_start = 0;
+                    congestion_avoidance = 1;
                 }
                 pthread_mutex_unlock(&lock);
 
@@ -497,5 +555,10 @@ void receive_packets(struct thread_data *data)
                 }
             }
         }
+        printf("AFTER receiving packet CWND: %0.2f\n", CWND);
+        if (slow_start == 1) {printf("congestion phase: slow_start\n");}
+        if (congestion_avoidance == 1) {printf("congestion phase: congestion_avoidance\n");}
+        printf("ssthresh: %d \n", ssthresh);
     }
+    fclose(log_file);
 }
