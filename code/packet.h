@@ -8,6 +8,7 @@ typedef struct {
     int ackno;
     int ctr_flags;
     int data_size;
+    long long int timestamp;
 }tcp_header;
 
 #define MSS_SIZE    1500

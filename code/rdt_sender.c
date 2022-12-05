@@ -17,7 +17,7 @@
 #include "common.h"
 
 #define STDIN_FD 0
-#define RETRY 120 // millisecond
+//#define RETRY 120 // millisecond
 
 // initialization of global variables
 int next_seqno = 0;      // sequence number for next packet to be sent
@@ -39,9 +39,15 @@ int congestion_avoidance = 0;
 // time_t t;
 // char log_line[256]; // line to store in log file
 
+int RETRY = 100;               // Retry time in milli seconds
+float SampleRTT = 50;          // Sample RTT
+float EstimatedRTT = 10;       // Estimated RTT
+float DevRTT = 0;              // Deviation of RTT
+
 int sockfd, serverlen;
 struct sockaddr_in serveraddr;
 struct itimerval timer;
+struct timeval start_time, end_time;
 tcp_packet *sndpkt;
 tcp_packet *recvpkt;
 sigset_t sigmask;
@@ -93,6 +99,10 @@ void resend_packets(int sig)
     // receiver that the transfert is completed
     if (end_transfer == 1)
     {
+        // Add start timeval to sending packet
+        gettimeofday(&start_time, NULL);
+        sndpkt->hdr.timestamp = ( start_time.tv_sec*1000LL + (start_time.tv_usec/1000));
+
         sndpkt = make_packet(0);
         sendto(sockfd, sndpkt, TCP_HDR_SIZE, 0,
                (const struct sockaddr *)&serveraddr, serverlen);
@@ -118,6 +128,10 @@ void resend_packets(int sig)
 
         VLOG(DEBUG, "Sending unacked packet %d to %s",
              send_base, inet_ntoa(serveraddr.sin_addr));
+        
+        // Add start timeval to sending packet
+        gettimeofday(&start_time, NULL);
+        sndpkt->hdr.timestamp = ( start_time.tv_sec*1000LL + (start_time.tv_usec/1000));
 
         if (sendto(sockfd, sndpkt, TCP_HDR_SIZE + get_data_size(sndpkt), 0,
                    (const struct sockaddr *)&serveraddr, serverlen) < 0)
@@ -260,6 +274,19 @@ void stop_timer()
     sigprocmask(SIG_BLOCK, &sigmask, NULL);
 }
 
+// Updating timeout interval based on the RTT
+void update_timer( tcp_packet *packet )
+{
+        gettimeofday(&end_time, NULL);
+        SampleRTT =(float) ((end_time.tv_sec*1000LL + (end_time.tv_usec/1000))  - packet->hdr.timestamp);
+
+        // Calculating estimated RTT and deviation of RTT
+        EstimatedRTT = ((1.0 - 0.125) * EstimatedRTT) + (0.125 * SampleRTT);
+        DevRTT = ((1.0 - 0.25) * DevRTT) + (0.25 * fabs(SampleRTT - EstimatedRTT));
+
+        // Calculating timeout interval
+        RETRY = (int) ( EstimatedRTT + (4 * DevRTT));
+}
 /*
  * init_timer: Initialize timer
  * delay: delay in milliseconds
@@ -380,6 +407,10 @@ void send_packets(struct thread_data *data)
 
             VLOG(DEBUG, "Sending packet %d to %s",
                  next_seqno, inet_ntoa(serveraddr.sin_addr));
+            
+            // Add start timeval to sending packet
+            gettimeofday(&start_time, NULL);
+            sndpkt->hdr.timestamp = ( start_time.tv_sec*1000LL + (start_time.tv_usec/1000));
 
             if (sendto(sockfd, sndpkt, TCP_HDR_SIZE + get_data_size(sndpkt), 0,
                        (const struct sockaddr *)&serveraddr, serverlen) < 0)
@@ -400,6 +431,10 @@ void send_packets(struct thread_data *data)
     {
         // wait all packets are ACKed
     }
+
+    // Add start timeval to sending packet
+    gettimeofday(&start_time, NULL);
+    sndpkt->hdr.timestamp = ( start_time.tv_sec*1000LL + (start_time.tv_usec/1000));
 
     // need to send last empty packet to notify the receiver that
     // the transfert is completed
@@ -464,6 +499,9 @@ void receive_packets(struct thread_data *data)
             error("recvfrom");
         }
         recvpkt = (tcp_packet *)buffer;
+
+        // update timer based on the new RETRY timeout time
+        update_timer(recvpkt);
 
         if (dup_ack != recvpkt->hdr.ackno)
         {
