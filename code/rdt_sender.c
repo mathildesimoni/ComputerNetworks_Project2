@@ -26,7 +26,6 @@ int unack_send_base = 0; // send base of an unacked packet
 int window_size = 10;    // window size (in packets)
 double CWND = 1;            // congestion window size
 int ssthresh = 64;
-//double whole_number = 0;    // to keep track if 1/CWND congestion avoidance sums to a whole number
 int send_max;            // end of the window
 int last_seqno = 0;      // seq number of last packet when reach end of file
 int timer_running = 0;   // 1 if the timer is currently running
@@ -36,13 +35,19 @@ int dup_ack = 0;         // checking when receiving duplicate acks
 int num_dup = 0;         // number of duplicate acks
 int slow_start = 1;
 int congestion_avoidance = 0;
-// time_t t;
-// char log_line[256]; // line to store in log file
 
 int RETRY = 100;               // Retry time in milli seconds
 float SampleRTT = 50;          // Sample RTT
 float EstimatedRTT = 10;       // Estimated RTT
 float DevRTT = 0;              // Deviation of RTT
+
+// variables to get current time
+struct timeval t;
+char log_line[256]; // line to store in log file
+int milli;
+int micro;
+char tmp_buffer[80];
+char curTime[84];
 
 int sockfd, serverlen;
 struct sockaddr_in serveraddr;
@@ -83,14 +88,6 @@ void resend_packets(int sig)
     {
         VLOG(INFO, "3 duplicate ACKs \n");
     }
-
-    // check if need to pass to congestion avoidance
-    // if packet is lost in slow-start phase
-    // if (slow_start == 1) {
-    //     // packet was lost in slow start phase, go back to start in slow start and update ssthresh
-    //     ssthresh = (int)ceil(fmax((double)CWND / (double)2, 2));
-    //     CWND = 1;
-    // }
 
     timer_running = 0;
 
@@ -151,121 +148,18 @@ void resend_packets(int sig)
         slow_start = 1;
         congestion_avoidance = 0;
         // printf("In resend, ssthresh is now: %d\n", ssthresh);
-        // CWND = 1;
-        // whole_number = 0;
+        
+        // get current time and output to log_file
+	gettimeofday(&t, NULL);
+	// milli = t.tv_usec / 1000;
+	micro = t.tv_usec;
+	strftime(tmp_buffer, 80, "%H:%M:%S", localtime(&t.tv_sec));
+	// curTime[84] = "";
+	curTime[83] = "";
+	sprintf(curTime, "%s:%d", tmp_buffer, micro);
+	sprintf(log_line, "%s,%0.2f\n", curTime, CWND);
+	fwrite(log_line, sizeof(log_line), 1, log_file);
     }
-
-    // if (sig == SIGALRM) { //SIGALRM
-
-    // timer_running = 0;
-    // VLOG(INFO, "Timeout happend");
-
-    // all packets for the file have been sent and received
-    // only need to receive last empty packet to let know the
-    // receiver that the transfert is completed
-    // if (end_transfer == 1){
-    // sndpkt = make_packet(0);
-    // sendto(sockfd, sndpkt, TCP_HDR_SIZE,  0,
-    // (const struct sockaddr *)&serveraddr, serverlen);
-    // start_timer();
-    // timer_running = 1;
-    // }
-    // else {
-
-    // only resend the last unacked packet
-    // int len;
-    // char buffer[DATA_SIZE];
-    // printf("resending the last unacked packet\n");
-
-    // move the pointer to part of the file to be retransmitted
-    // fseek(fp, send_base, SEEK_SET);
-    // len = fread(buffer, 1, DATA_SIZE, fp);
-
-    // sndpkt = make_packet(len);
-    // memcpy(sndpkt->data, buffer, len);
-    // sndpkt->hdr.seqno = send_base;
-
-    // VLOG(DEBUG, "Sending unacked packet %d to %s",
-    //   send_base, inet_ntoa(serveraddr.sin_addr));
-
-    // if(sendto(sockfd, sndpkt, TCP_HDR_SIZE + get_data_size(sndpkt), 0,
-    //  ( const struct sockaddr *)&serveraddr, serverlen) < 0) {
-    //  error("sendto");
-    // }
-    // if (timer_running == 0) {
-    // start_timer();
-    // timer_running = 1;
-    // }
-    // free(sndpkt);
-
-    // // Resend all packets range between send_base and send_max
-    // int len;
-    // char buffer[DATA_SIZE];
-    // //starting from oldest unacked packet
-    // next_seqno = send_base;
-    // int max = send_max;
-
-    // // move the pointer to part of the file to be retransmitted
-    // fseek(fp, next_seqno, SEEK_SET);
-
-    // // resend all packets in the window
-    // while (next_seqno < max) {
-    //  len = fread(buffer, 1, DATA_SIZE, fp);
-
-    //  if (len <= 0) {
-    //      break;
-    //  }
-    //  sndpkt = make_packet(len);
-    //  memcpy(sndpkt->data, buffer, len);
-    //  sndpkt->hdr.seqno = next_seqno;
-
-    //  VLOG(DEBUG, "Sending unacked packet %d to %s",
-    //          next_seqno, inet_ntoa(serveraddr.sin_addr));
-
-    //  if(sendto(sockfd, sndpkt, TCP_HDR_SIZE + get_data_size(sndpkt), 0,
-    //          ( const struct sockaddr *)&serveraddr, serverlen) < 0) {
-    //  error("sendto");
-    //  }
-    //  if (timer_running == 0) {
-    //      start_timer();
-    //      timer_running = 1;
-    //  }
-    //  free(sndpkt);
-    //  next_seqno += len;
-    // }
-    //}
-    // }
-    // else if (sig == 8) {
-    // 3 puplicates
-    // timer_running = 0;
-    // stop_timer();
-    //  VLOG(INFO, "3 puplicate ACKs happened");
-
-    // only resend the last unacked packet
-    // int len;
-    // char buffer[DATA_SIZE];
-
-    // move the pointer to part of the file to be retransmitted
-    // fseek(fp, send_base, SEEK_SET);
-    // len = fread(buffer, 1, DATA_SIZE, fp);
-
-    // sndpkt = make_packet(len);
-    // memcpy(sndpkt->data, buffer, len);
-    // sndpkt->hdr.seqno = send_base;
-
-    // VLOG(DEBUG, "Sending unacked packet %d to %s",
-    //        send_base, inet_ntoa(serveraddr.sin_addr));
-
-    // if(sendto(sockfd, sndpkt, TCP_HDR_SIZE + get_data_size(sndpkt), 0,
-    //     ( const struct sockaddr *)&serveraddr, serverlen) < 0) {
-    //  error("sendto");
-    // }
-    //  if (timer_running == 0) {
-    //   start_timer();
-    //  timer_running = 1;
-    // }
-    // free(sndpkt);
-    //  }
     // free(sndpkt);
 }
 
@@ -357,6 +251,24 @@ int main(int argc, char **argv)
     data.sockfd = sockfd;
     data.serveraddr = serveraddr;
     data.serverlen = serverlen;
+    
+    // opening file CWND.csv to store CWND evolution
+    log_file = fopen("../analysis/CWND.csv", "wb");
+    if (log_file == NULL)
+    {
+        error("opening log_file");
+    }
+    
+    // get current time and output to log_file
+    gettimeofday(&t, NULL);
+    // milli = t.tv_usec / 1000;
+    micro = t.tv_usec;
+    strftime(tmp_buffer, 80, "%H:%M:%S", localtime(&t.tv_sec));
+    // curTime[84] = "";
+    curTime[83] = "";
+    sprintf(curTime, "%s:%d", tmp_buffer, micro);
+    sprintf(log_line, "%s,%0.2f\n", curTime, CWND);
+    fwrite(log_line, sizeof(log_line), 1, log_file);
 
     // start threading process
     // split the program in 2 threads
@@ -369,6 +281,8 @@ int main(int argc, char **argv)
 
     pthread_join(t_1, NULL);
     pthread_join(t_2, NULL);
+    
+    fclose(log_file);
 
     return 0;
 }
@@ -455,21 +369,6 @@ void send_packets(struct thread_data *data)
 // function used by the receiving thread
 void receive_packets(struct thread_data *data)
 {
-    // opening file CWND.csv to store CWND evolution
-    log_file = fopen("../analysis/CWND.csv", "wb");
-    if (log_file == NULL)
-    {
-        error("opening log_file");
-    }
-
-    // variables to get current time
-    struct timeval t;
-    char log_line[256]; // line to store in log file
-    int milli;
-    int micro;
-    char tmp_buffer[80];
-    char curTime[84];
-
     int len;
     char buffer[DATA_SIZE];
 
@@ -481,17 +380,6 @@ void receive_packets(struct thread_data *data)
 
     while (1)
     {
-        // get current time and output to log_file
-        gettimeofday(&t, NULL);
-        // milli = t.tv_usec / 1000;
-        micro = t.tv_usec;
-        strftime(tmp_buffer, 80, "%H:%M:%S", localtime(&t.tv_sec));
-        // curTime[84] = "";
-        curTime[83] = "";
-        sprintf(curTime, "%s:%d", tmp_buffer, micro);
-        sprintf(log_line, "%s,%0.2f\n", curTime, CWND);
-        fwrite(log_line, sizeof(log_line), 1, log_file);
-
         printf("BEFORE receiving packet CWND: %0.2f\n", CWND);
         if (recvfrom(sockfd, buffer, MSS_SIZE, 0,
                      (struct sockaddr *)&serveraddr, (socklen_t *)&serverlen) < 0)
@@ -521,17 +409,6 @@ void receive_packets(struct thread_data *data)
             num_dup = 0;
             printf("3 duplicate acks received, packet lost.\n");
             // printf("CONGESTION AVOIDANCE \n");
-            // printf("current window size in lost pakcet: %f\n", CWND);
-            // CWND += (double) 1 / (double) CWND;
-            // send_max = send_base + (int) floor(CWND) * DATA_SIZE;
-
-            // // whole_number += (double) 1 / (double) CWND;
-            // // if ((int) floor(whole_number) == 1)
-            // // {
-            // //     CWND++;
-            // //     whole_number = 0;
-            // //     send_max = send_base + CWND * DATA_SIZE;
-            // // }
 
             stop_timer();
             resend_packets(2); // 2 is random here, no particular meaning
@@ -550,12 +427,7 @@ void receive_packets(struct thread_data *data)
                 pthread_mutex_lock(&lock);
                 // move window (keeping same packet)
                 send_base = recvpkt->hdr.ackno;
-                // send_max += DATA_SIZE;
-                // if (slow_start == 1) {
-                //     CWND ++;
-                //     send_max = send_base + (int) floor(CWND) * DATA_SIZE;
 
-                // }
                 if (CWND < ssthresh)
                 {
                     // slow start case
@@ -568,22 +440,21 @@ void receive_packets(struct thread_data *data)
                 }
                 else // (CWND > ssthresh)
                 {
-                    //printf("CONGESTION AVOIDANCE \n");
-                    //printf("current window size in congestion avoidance: %f\n", CWND);
-                    // whole_number += (double) 1 / (double) CWND;
-                    // printf("whole number : %f\n", whole_number);
-                    // if ((int) floor(whole_number) == 1)
-                    // {
-                    //     printf("whole number reached 1\n");
-                    //     CWND++;
-                    //     whole_number = 0;
-                    //     send_max = send_base + CWND * DATA_SIZE;
-                    // }
-                    CWND += (double) 1 / (double) CWND;
+                    CWND += (double) 1 / (double) (int) floor(CWND);
                     send_max = send_base + (int) floor(CWND) * DATA_SIZE;
                     slow_start = 0;
                     congestion_avoidance = 1;
                 }
+                
+                // get current time and output to log_file
+		gettimeofday(&t, NULL);
+		micro = t.tv_usec;
+		strftime(tmp_buffer, 80, "%H:%M:%S", localtime(&t.tv_sec));
+		curTime[83] = "";
+		sprintf(curTime, "%s:%d", tmp_buffer, micro);
+		sprintf(log_line, "%s,%0.2f\n", curTime, CWND);
+		fwrite(log_line, sizeof(log_line), 1, log_file);
+                
                 pthread_mutex_unlock(&lock);
 
                 // if there are still unacked packets, restart timer
@@ -598,5 +469,4 @@ void receive_packets(struct thread_data *data)
         if (congestion_avoidance == 1) {printf("congestion phase: congestion_avoidance\n");}
         printf("ssthresh: %d \n", ssthresh);
     }
-    fclose(log_file);
 }

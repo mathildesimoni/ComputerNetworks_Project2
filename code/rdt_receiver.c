@@ -11,7 +11,7 @@
 
 #include "common.h"
 #include "packet.h"
-#define buffsize 100
+#define buffsize 64
 
 
 tcp_packet *recvpkt;
@@ -164,22 +164,6 @@ int main(int argc, char **argv) {
                     (struct sockaddr *) &clientaddr, clientlen) < 0) {
                 error("ERROR in sendto");
             }
-
-            // buffer the packet and send a duplicate ack 
-            // i = 0;
-            // while(i<buffsize){
-            //     if(lostpkt_buffer[i]->hdr.seqno == recvpkt->hdr.seqno){
-            //         memcpy(lostpkt_buffer[i], recvpkt, MSS_SIZE);
-            //         sndpkt = make_packet(0);
-            //         sndpkt->hdr.ackno = lostpkt_buffer[i]->hdr.seqno + lostpkt_buffer[i]->hdr.data_size;
-            //         sndpkt->hdr.ctr_flags = ACK;
-            //         if (sendto(sockfd, sndpkt, TCP_HDR_SIZE, 0, 
-            //             (struct sockaddr *) &clientaddr, clientlen) < 0) {
-            //             error("ERROR in sendto");
-            //         }
-            //     }
-            //     i++;
-            // }
         }
         else {
             printf("\n");
@@ -221,13 +205,11 @@ int main(int argc, char **argv) {
 
             sndpkt = make_packet(0);
             sndpkt->hdr.ackno = exp_seqno;
-            // sndpkt->hdr.ackno = recvpkt->hdr.seqno + recvpkt->hdr.data_size;
             sndpkt->hdr.ctr_flags = ACK;
             if (sendto(sockfd, sndpkt, TCP_HDR_SIZE, 0, 
                     (struct sockaddr *) &clientaddr, clientlen) < 0) {
                 error("ERROR in sendto");
             }
-            // exp_seqno += recvpkt->hdr.data_size;
         }
     }
     return 0;
