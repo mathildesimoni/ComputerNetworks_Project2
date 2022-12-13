@@ -11,12 +11,12 @@
 
 #include "common.h"
 #include "packet.h"
-#define buffsize 64
+#define buffsize 64 // size of buffer
 
 
 tcp_packet *recvpkt;
 tcp_packet *sndpkt;
-tcp_packet *lostpkt_buffer[buffsize]; //random buffer size for now
+tcp_packet *lostpkt_buffer[buffsize];
 
 int main(int argc, char **argv) {
     int sockfd; /* socket */
@@ -36,7 +36,7 @@ int main(int argc, char **argv) {
     int count;
 
     int i = 0; //iterator 
-    while(i < buffsize){
+    while(i < buffsize) {
             lostpkt_buffer[i] = make_packet(MSS_SIZE);
             lostpkt_buffer[i]->hdr.data_size = 0; // Assign all created packets to have a data_size of 0 for empty packets
             lostpkt_buffer[i]->hdr.seqno = -1; // Assign all packet hdr.seqno's to -1 for exmpty packets
@@ -126,7 +126,7 @@ int main(int argc, char **argv) {
         printf("Expected seq was: %d \n", exp_seqno);
         
         // send ACK back to the client only if in-order packet
-        if (recvpkt->hdr.seqno != exp_seqno) {
+        if (recvpkt->hdr.seqno != exp_seqno) { // in order packet
             printf("Out of order packet! \n\n");
 
             // check that the out of order packet isn't already in the buffer
@@ -153,8 +153,6 @@ int main(int argc, char **argv) {
                     i_buf ++;
                  }   
             }
-            // if the buffer is full, the out of order packet will NOT be stored
-
             // send an ACK  with expected sequence number 
             // expected sequence number is not the seq no of the received packet here
             sndpkt = make_packet(0);
@@ -165,7 +163,7 @@ int main(int argc, char **argv) {
                 error("ERROR in sendto");
             }
         }
-        else {
+        else { // out of order packet
             printf("\n");
             fseek(fp, recvpkt->hdr.seqno, SEEK_SET);
             fwrite(recvpkt->data, 1, recvpkt->hdr.data_size, fp);
@@ -183,7 +181,7 @@ int main(int argc, char **argv) {
                 }
                 count = 0;
                 i_buf = 0;
-                while (i_buf < buffsize){
+                while (i_buf < buffsize) {
                     if (lostpkt_buffer[i_buf]->hdr.seqno == exp_seqno) {
                         // write packet to the file
                         fseek(fp, exp_seqno, SEEK_SET);

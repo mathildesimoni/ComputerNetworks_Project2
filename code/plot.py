@@ -1,3 +1,8 @@
+# python code to display a plot of the evolution of CWND (window size)
+# displays 2 plots: 
+# - CWND as a function of time in milliseconds 
+# - CWND as a function of time in "CWND update"
+
 import matplotlib.pyplot as plt
 
 log_file = open("../analysis/CWND.csv", 'r')
@@ -60,8 +65,3 @@ plt.xlabel("Time (CWND update)")
 plt.yticks(range(int(min(cwnds_2)), int(max(cwnds_2)), int(max(cwnds_2)/10)+1))
 plt.grid(True, which="both")
 plt.savefig("../analysis/plot_cwnd_2.pdf",dpi=1000,bbox_inches='tight')
-
-
-
-
-
