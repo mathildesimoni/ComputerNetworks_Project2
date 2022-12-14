@@ -13,40 +13,40 @@
 #include "packet.h"
 #define buffsize 64 // size of buffer
 
-
 tcp_packet *recvpkt;
 tcp_packet *sndpkt;
 tcp_packet *lostpkt_buffer[buffsize];
-struct timeval start_time;
+struct timeval start_time; 
 int micro, macro;
 
-int main(int argc, char **argv) {
-    int sockfd; /* socket */
-    int portno; /* port to listen on */
-    int clientlen; /* byte size of client's address */
-    struct sockaddr_in serveraddr; /* server's addr */
-    struct sockaddr_in clientaddr; /* client addr */
-    int optval; /* flag value for setsockopt */
-    FILE *fp;
-    char buffer[MSS_SIZE];
-    char dup_buff[MSS_SIZE];
+int main(int argc, char **argv) 
+{
+    int sockfd;                     //socket 
+    int portno;                     // port to listen on 
+    int clientlen;                  // byte size of client's address 
+    struct sockaddr_in serveraddr;  // server's addr 
+    struct sockaddr_in clientaddr;  // client addr 
+    int optval;                     // flag value for setsockopt 
+    FILE *fp; 
+    char buffer[MSS_SIZE];          // buffer to store out of order packets
     struct timeval tp;
-    int exp_seqno = 0; // expected sequence number
-    int nb_out_order_packets = 0;
-    int i_buf;
-    int check_packet_buffered;
-    int count;
+    int exp_seqno = 0;              // expected sequence number
+    int i_buf;                      // variable used to iterate over the buffer
+    int check_packet_buffered;      // variable used to check packets in the buffer
+    int count;                      // variable used to check out of order packets in the buffer
 
     int i = 0; //iterator 
-    while(i < buffsize) {
+    while(i < buffsize) 
+    {
             lostpkt_buffer[i] = make_packet(MSS_SIZE);
-            lostpkt_buffer[i]->hdr.data_size = 0; // Assign all created packets to have a data_size of 0 for empty packets
-            lostpkt_buffer[i]->hdr.seqno = -1; // Assign all packet hdr.seqno's to -1 for exmpty packets
+            lostpkt_buffer[i]->hdr.data_size = 0;   // Assign all created packets to have a data_size of 0 for empty packets
+            lostpkt_buffer[i]->hdr.seqno = -1;      // Assign all packet hdr.seqno's to -1 for exmpty packets
             i++;
     }
 
     // check command line arguments 
-    if (argc != 3) {
+    if (argc != 3) 
+    {
         fprintf(stderr, "usage: %s <port> FILE_RECVD\n", argv[0]);
         exit(1);
     }
@@ -55,7 +55,8 @@ int main(int argc, char **argv) {
     char filename[256];
     sprintf(filename, "../data_recv/%s", argv[2]);
     fp  = fopen(filename, "w");
-    if (fp == NULL) {
+    if (fp == NULL) 
+    {
         error(argv[2]);
     }
 
@@ -64,7 +65,7 @@ int main(int argc, char **argv) {
      */
     sockfd = socket(AF_INET, SOCK_DGRAM, 0);
     if (sockfd < 0) 
-        error("ERROR opening socket");
+        error("ERROR opening socket"); 
 
     /* setsockopt: Handy debugging trick that lets 
      * us rerun the server immediately after we kill it; 
@@ -96,17 +97,20 @@ int main(int argc, char **argv) {
     VLOG(DEBUG, "epoch time, bytes received, sequence number");
 
     clientlen = sizeof(clientaddr);
-    while (1) {
+    while (1) 
+    {
         /*
          * recvfrom: receive a UDP datagram from a client
          */
         if (recvfrom(sockfd, buffer, MSS_SIZE, 0,
-                (struct sockaddr *) &clientaddr, (socklen_t *)&clientlen) < 0) {
+                (struct sockaddr *) &clientaddr, (socklen_t *)&clientlen) < 0) 
+        {
             error("ERROR in recvfrom");
         }
         recvpkt = (tcp_packet *) buffer;
         assert(get_data_size(recvpkt) <= DATA_SIZE);
-        if ( recvpkt->hdr.data_size == 0) {
+        if ( recvpkt->hdr.data_size == 0) 
+        {
             VLOG(INFO, "End Of File has been reached");
             fclose(fp);
             
@@ -115,7 +119,8 @@ int main(int argc, char **argv) {
             sndpkt->hdr.ackno = recvpkt->hdr.seqno + recvpkt->hdr.data_size;
             sndpkt->hdr.ctr_flags = ACK;
             if (sendto(sockfd, sndpkt, TCP_HDR_SIZE, 0, 
-                    (struct sockaddr *) &clientaddr, clientlen) < 0) {
+                    (struct sockaddr *) &clientaddr, clientlen) < 0) 
+            {
                 error("ERROR in sendto");
             }
             break;
@@ -123,17 +128,20 @@ int main(int argc, char **argv) {
         
         // sendto: ACK back to the client 
         gettimeofday(&tp, NULL);
-        VLOG(DEBUG, "Packet received: %lu, %d, %d", tp.tv_sec, recvpkt->hdr.data_size, recvpkt->hdr.seqno);
+        // VLOG(DEBUG, "Packet received: %lu, %d, %d", tp.tv_sec, recvpkt->hdr.data_size, recvpkt->hdr.seqno);
         
         // send ACK back to the client only if in-order packet
-        if (recvpkt->hdr.seqno != exp_seqno) { // in order packet
+        if (recvpkt->hdr.seqno != exp_seqno) // in order packet
+        { 
             //printf("Out of order packet! \n\n");
 
             // check that the out of order packet isn't already in the buffer
             i_buf = 0;
             check_packet_buffered = 0;
-            while (i_buf < buffsize){
-                if (lostpkt_buffer[i_buf]->hdr.seqno == recvpkt->hdr.seqno) {
+            while (i_buf < buffsize)
+            {
+                if (lostpkt_buffer[i_buf]->hdr.seqno == recvpkt->hdr.seqno) 
+                {
                     check_packet_buffered = 1;
                     break;
                 }
@@ -142,10 +150,13 @@ int main(int argc, char **argv) {
 
             // if packet already buffered, no need to buffer it again
             // if packet is not buffered yet, add it to the buffer
-            if (check_packet_buffered == 0) {
+            if (check_packet_buffered == 0) 
+            {
                 i_buf = 0;
-                while (i_buf < buffsize) {
-                    if (lostpkt_buffer[i_buf]->hdr.seqno == -1) {
+                while (i_buf < buffsize) 
+                {
+                    if (lostpkt_buffer[i_buf]->hdr.seqno == -1) 
+                    {
                         // can store the out of order packet here
                         memcpy(lostpkt_buffer[i_buf], recvpkt, MSS_SIZE);
                         break;
@@ -160,11 +171,13 @@ int main(int argc, char **argv) {
             sndpkt->hdr.ctr_flags = ACK;
 
             if (sendto(sockfd, sndpkt, TCP_HDR_SIZE, 0, 
-                    (struct sockaddr *) &clientaddr, clientlen) < 0) {
+                    (struct sockaddr *) &clientaddr, clientlen) < 0) 
+            {
                 error("ERROR in sendto");
             }
         }
-        else { // out of order packet
+        else // out of order packet
+        { 
             fseek(fp, recvpkt->hdr.seqno, SEEK_SET);
             fwrite(recvpkt->data, 1, recvpkt->hdr.data_size, fp);
 
@@ -175,14 +188,17 @@ int main(int argc, char **argv) {
             // if yes, write them to the file, remove from buffer and update the ackno before sending ACK
             count = 0;
             while (1) {
-                if (count == buffsize) {
+                if (count == buffsize) 
+                {
                     // no out of order packet following
                     break;
                 }
                 count = 0;
                 i_buf = 0;
-                while (i_buf < buffsize) {
-                    if (lostpkt_buffer[i_buf]->hdr.seqno == exp_seqno) {
+                while (i_buf < buffsize) 
+                {
+                    if (lostpkt_buffer[i_buf]->hdr.seqno == exp_seqno) 
+                    {
                         // write packet to the file
                         fseek(fp, exp_seqno, SEEK_SET);
                         fwrite(lostpkt_buffer[i_buf]->data, 1, lostpkt_buffer[i_buf]->hdr.data_size, fp);
@@ -206,7 +222,8 @@ int main(int argc, char **argv) {
             sndpkt->hdr.ctr_flags = ACK;
             
             if (sendto(sockfd, sndpkt, TCP_HDR_SIZE, 0, 
-                    (struct sockaddr *) &clientaddr, clientlen) < 0) {
+                    (struct sockaddr *) &clientaddr, clientlen) < 0) 
+            {
                 error("ERROR in sendto");
             }
         }

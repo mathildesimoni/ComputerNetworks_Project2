@@ -27,15 +27,15 @@ TARGET:	$(OBJDIR) $(CLIENT)	$(SERVER)
 
 
 $(CLIENT):	$(CLIENT_OBJECTS)
-	$(LINKER)  $@  $(CLIENT_OBJECTS) -lm
+	$(LINKER)  $@  $(CLIENT_OBJECTS) -lm -w
 	@echo "Link complete!"
 
 $(SERVER): $(SERVER_OBJECTS)
-	$(LINKER)  $@  $(SERVER_OBJECTS) -lm
+	$(LINKER)  $@  $(SERVER_OBJECTS) -lm -w
 	@echo "Link complete!"
 
 $(OBJDIR)/%.o:	%.c common.h packet.h
-	$(CC) $(CFLAGS)  $< -o $@
+	$(CC) $(CFLAGS)  $< -o $@ -w
 	@echo "Compilation complete!"
 
 clean:
