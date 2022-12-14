@@ -17,6 +17,8 @@
 tcp_packet *recvpkt;
 tcp_packet *sndpkt;
 tcp_packet *lostpkt_buffer[buffsize];
+struct timeval start_time;
+int micro, macro;
 
 int main(int argc, char **argv) {
     int sockfd; /* socket */
@@ -123,11 +125,9 @@ int main(int argc, char **argv) {
         gettimeofday(&tp, NULL);
         VLOG(DEBUG, "Packet received: %lu, %d, %d", tp.tv_sec, recvpkt->hdr.data_size, recvpkt->hdr.seqno);
         
-        printf("Expected seq was: %d \n", exp_seqno);
-        
         // send ACK back to the client only if in-order packet
         if (recvpkt->hdr.seqno != exp_seqno) { // in order packet
-            printf("Out of order packet! \n\n");
+            //printf("Out of order packet! \n\n");
 
             // check that the out of order packet isn't already in the buffer
             i_buf = 0;
@@ -158,13 +158,13 @@ int main(int argc, char **argv) {
             sndpkt = make_packet(0);
             sndpkt->hdr.ackno = exp_seqno;
             sndpkt->hdr.ctr_flags = ACK;
+
             if (sendto(sockfd, sndpkt, TCP_HDR_SIZE, 0, 
                     (struct sockaddr *) &clientaddr, clientlen) < 0) {
                 error("ERROR in sendto");
             }
         }
         else { // out of order packet
-            printf("\n");
             fseek(fp, recvpkt->hdr.seqno, SEEK_SET);
             fwrite(recvpkt->data, 1, recvpkt->hdr.data_size, fp);
 
@@ -204,6 +204,7 @@ int main(int argc, char **argv) {
             sndpkt = make_packet(0);
             sndpkt->hdr.ackno = exp_seqno;
             sndpkt->hdr.ctr_flags = ACK;
+            
             if (sendto(sockfd, sndpkt, TCP_HDR_SIZE, 0, 
                     (struct sockaddr *) &clientaddr, clientlen) < 0) {
                 error("ERROR in sendto");
