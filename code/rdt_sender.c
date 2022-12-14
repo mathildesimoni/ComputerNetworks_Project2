@@ -127,11 +127,11 @@ void resend_packets(int sig)
 
     if (sig == SIGALRM)
     {
-        VLOG(INFO, "Timeout \n");
+        VLOG(INFO, "Timeout");
     }
     else
     {
-        VLOG(INFO, "3 duplicate ACKs \n");
+        VLOG(INFO, "3 duplicate ACKs");
     }
 
     timer_running = 0;
@@ -148,7 +148,6 @@ void resend_packets(int sig)
         sndpkt = make_packet(0);
         sendto(sockfd, sndpkt, TCP_HDR_SIZE, 0,
                (const struct sockaddr *)&serveraddr, serverlen);
-        init_timer(RETRY, resend_packets);
         start_timer();
         timer_running = 1;
     }
@@ -158,8 +157,6 @@ void resend_packets(int sig)
         // only resend the last unacked packet
         int len;
         char buffer[DATA_SIZE];
-
-        //printf("resending the last unacked packet\n");
 
         // move the pointer to part of the file to be retransmitted
         fseek(fp, send_base, SEEK_SET);
@@ -183,7 +180,6 @@ void resend_packets(int sig)
         }
         if (timer_running == 0)
         {
-            init_timer(RETRY, resend_packets);
             start_timer();
             timer_running = 1;
         }
@@ -214,14 +210,6 @@ int main(int argc, char **argv)
     char *hostname;
 
     send_max = send_base + (int)floor(CWND) * DATA_SIZE;
-    if (slow_start == 1)
-    {
-        //printf("congestion phase: slow_start\n");
-    }
-    if (congestion_avoidance == 1)
-    {
-        //printf("congestion phase: congestion_avoidance\n");
-    }
 
     /* check command line arguments */
     if (argc != 4)
@@ -346,7 +334,6 @@ void send_packets(struct thread_data *data)
             }
             if (timer_running == 0)
             {
-                init_timer(RETRY, resend_packets);
                 start_timer();
                 timer_running = 1;
             }
@@ -371,7 +358,6 @@ void send_packets(struct thread_data *data)
     sndpkt = make_packet(0);
     sendto(sockfd, sndpkt, TCP_HDR_SIZE, 0,
            (const struct sockaddr *)&serveraddr, serverlen);
-    init_timer(RETRY, resend_packets);
     start_timer();
     timer_running = 1;
     while (last_packet_rcv == 0)
@@ -469,7 +455,6 @@ void receive_packets(struct thread_data *data)
                 // if there are still unacked packets, restart timer
                 if (next_seqno != send_base)
                 {
-                    init_timer(RETRY, resend_packets);
                     start_timer();
                 }
             }
