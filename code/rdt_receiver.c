@@ -128,7 +128,7 @@ int main(int argc, char **argv)
         
         // sendto: ACK back to the client 
         gettimeofday(&tp, NULL);
-        // VLOG(DEBUG, "Packet received: %lu, %d, %d", tp.tv_sec, recvpkt->hdr.data_size, recvpkt->hdr.seqno);
+        VLOG(DEBUG, "Packet received: %lu, %d, %d", tp.tv_sec, recvpkt->hdr.data_size, recvpkt->hdr.seqno);
         
         // send ACK back to the client only if in-order packet
         if (recvpkt->hdr.seqno != exp_seqno) // in order packet

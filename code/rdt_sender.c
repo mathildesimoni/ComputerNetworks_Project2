@@ -74,100 +74,12 @@ struct thread_data
 
 void send_packets(struct thread_data *data);
 void receive_packets(struct thread_data *data);
+void resend_packets(int sig);
 
 void start_timer()
 {
     sigprocmask(SIG_UNBLOCK, &sigmask, NULL);
     setitimer(ITIMER_REAL, &timer, NULL);
-}
-
-void resend_packets(int sig)
-{
-
-    if (sig == SIGALRM)
-    {
-        VLOG(INFO, "Timeout \n");
-    }
-    else
-    {
-        VLOG(INFO, "3 duplicate ACKs \n");
-    }
-
-    timer_running = 0;
-
-    // all packets for the file have been sent and received
-    // only need to receive last empty packet to let know the
-    // receiver that the transfert is completed
-    if (end_transfer == 1)
-    {
-        // Add start timeval to sending packet
-        gettimeofday(&start_time, NULL);
-        sndpkt->hdr.timestamp = (start_time.tv_sec * 1000LL + (start_time.tv_usec / 1000));
-
-        sndpkt = make_packet(0);
-        sendto(sockfd, sndpkt, TCP_HDR_SIZE, 0,
-               (const struct sockaddr *)&serveraddr, serverlen);
-        start_timer();
-        timer_running = 1;
-    }
-    else
-    {
-
-        // only resend the last unacked packet
-        int len;
-        char buffer[DATA_SIZE];
-
-        //printf("resending the last unacked packet\n");
-
-        // move the pointer to part of the file to be retransmitted
-        fseek(fp, send_base, SEEK_SET);
-        len = fread(buffer, 1, DATA_SIZE, fp);
-
-        sndpkt = make_packet(len);
-        memcpy(sndpkt->data, buffer, len);
-        sndpkt->hdr.seqno = send_base;
-
-        VLOG(DEBUG, "Sending unacked packet %d to %s",
-             send_base, inet_ntoa(serveraddr.sin_addr));
-
-        // Add start timeval to sending packet
-        gettimeofday(&start_time, NULL);
-        sndpkt->hdr.timestamp = (start_time.tv_sec * 1000LL + (start_time.tv_usec / 1000));
-
-        if (sendto(sockfd, sndpkt, TCP_HDR_SIZE + get_data_size(sndpkt), 0,
-                   (const struct sockaddr *)&serveraddr, serverlen) < 0)
-        {
-            error("sendto");
-        }
-        if (timer_running == 0)
-        {
-            start_timer();
-            timer_running = 1;
-        }
-
-        // if packet is lost in slow-start or congestion avoidance phase
-        // go back to start of slow start for 2 cases
-        ssthresh = (int)ceil(fmax((double)CWND / (double)2, 2));
-        CWND = 1;
-        slow_start = 1;
-        congestion_avoidance = 0;
-        // printf("In resend, ssthresh is now: %d\n", ssthresh);
-
-        // get current time and output to log_file
-        gettimeofday(&t, NULL);
-        micro = t.tv_usec;
-        strftime(tmp_buffer, 80, "%H:%M:%S", localtime(&t.tv_sec));
-        curTime[83] = "";
-        sprintf(curTime, "%s:%d", tmp_buffer, micro);
-        sprintf(log_line, "%s,%0.2f\n", curTime, CWND);
-        fwrite(log_line, sizeof(log_line), 1, log_file);
-        //printf("%s:%d\n", tmp_buffer, micro);
-    }
-}
-
-void stop_timer()
-{
-    sigprocmask(SIG_BLOCK, &sigmask, NULL);
 }
 
 /*
@@ -202,6 +114,98 @@ void update_timer(tcp_packet *packet)
     // Calculating timeout interval
     RETRY = (int)(EstimatedRTT + (4 * DevRTT));
 
+}
+
+void stop_timer()
+{
+    sigprocmask(SIG_BLOCK, &sigmask, NULL);
+}
+
+
+void resend_packets(int sig)
+{
+
+    if (sig == SIGALRM)
+    {
+        VLOG(INFO, "Timeout \n");
+    }
+    else
+    {
+        VLOG(INFO, "3 duplicate ACKs \n");
+    }
+
+    timer_running = 0;
+
+    // all packets for the file have been sent and received
+    // only need to receive last empty packet to let know the
+    // receiver that the transfert is completed
+    if (end_transfer == 1)
+    {
+        // Add start timeval to sending packet
+        gettimeofday(&start_time, NULL);
+        sndpkt->hdr.timestamp = (start_time.tv_sec * 1000LL + (start_time.tv_usec / 1000));
+
+        sndpkt = make_packet(0);
+        sendto(sockfd, sndpkt, TCP_HDR_SIZE, 0,
+               (const struct sockaddr *)&serveraddr, serverlen);
+        init_timer(RETRY, resend_packets);
+        start_timer();
+        timer_running = 1;
+    }
+    else
+    {
+
+        // only resend the last unacked packet
+        int len;
+        char buffer[DATA_SIZE];
+
+        //printf("resending the last unacked packet\n");
+
+        // move the pointer to part of the file to be retransmitted
+        fseek(fp, send_base, SEEK_SET);
+        len = fread(buffer, 1, DATA_SIZE, fp);
+
+        sndpkt = make_packet(len);
+        memcpy(sndpkt->data, buffer, len);
+        sndpkt->hdr.seqno = send_base;
+
+        VLOG(DEBUG, "Sending unacked packet %d to %s",
+             send_base, inet_ntoa(serveraddr.sin_addr));
+
+        // Add start timeval to sending packet
+        gettimeofday(&start_time, NULL);
+        sndpkt->hdr.timestamp = (start_time.tv_sec * 1000LL + (start_time.tv_usec / 1000));
+
+        if (sendto(sockfd, sndpkt, TCP_HDR_SIZE + get_data_size(sndpkt), 0,
+                   (const struct sockaddr *)&serveraddr, serverlen) < 0)
+        {
+            error("sendto");
+        }
+        if (timer_running == 0)
+        {
+            init_timer(RETRY, resend_packets);
+            start_timer();
+            timer_running = 1;
+        }
+
+        // if packet is lost in slow-start or congestion avoidance phase
+        // go back to start of slow start for 2 cases
+        ssthresh = (int)ceil(fmax((double)CWND / (double)2, 2));
+        CWND = 1;
+        slow_start = 1;
+        congestion_avoidance = 0;
+        // printf("In resend, ssthresh is now: %d\n", ssthresh);
+
+        // get current time and output to log_file
+        gettimeofday(&t, NULL);
+        micro = t.tv_usec;
+        strftime(tmp_buffer, 80, "%H:%M:%S", localtime(&t.tv_sec));
+        curTime[83] = "";
+        sprintf(curTime, "%s:%d", tmp_buffer, micro);
+        sprintf(log_line, "%s,%0.2f\n", curTime, CWND);
+        fwrite(log_line, sizeof(log_line), 1, log_file);
+        //printf("%s:%d\n", tmp_buffer, micro);
+    }
 }
 
 int main(int argc, char **argv)
@@ -308,20 +312,8 @@ void send_packets(struct thread_data *data)
     int serverlen = data->serverlen;
     struct sockaddr_in serveraddr = data->serveraddr;
 
-    // init_timer(RETRY, resend_packets);
     init_timer(RETRY, resend_packets);
     start_timer();
-
-    gettimeofday(&t, NULL);
-    int starting_time = t.tv_sec;
-    while (1)
-    {
-        sleep(10);
-        gettimeofday(&t, NULL);
-
-        if (t.tv_sec - starting_time > 5)
-            init_timer(RETRY, resend_packets);
-    }
 
     while (1)
     {
@@ -354,6 +346,7 @@ void send_packets(struct thread_data *data)
             }
             if (timer_running == 0)
             {
+                init_timer(RETRY, resend_packets);
                 start_timer();
                 timer_running = 1;
             }
@@ -378,6 +371,7 @@ void send_packets(struct thread_data *data)
     sndpkt = make_packet(0);
     sendto(sockfd, sndpkt, TCP_HDR_SIZE, 0,
            (const struct sockaddr *)&serveraddr, serverlen);
+    init_timer(RETRY, resend_packets);
     start_timer();
     timer_running = 1;
     while (last_packet_rcv == 0)
@@ -475,6 +469,7 @@ void receive_packets(struct thread_data *data)
                 // if there are still unacked packets, restart timer
                 if (next_seqno != send_base)
                 {
+                    init_timer(RETRY, resend_packets);
                     start_timer();
                 }
             }
